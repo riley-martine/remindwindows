@@ -4,7 +4,10 @@ from pathlib import Path
 import re
 import string
 import hashlib
-from PyQt5.QtWidgets import QApplication, QWidget
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QDesktopWidget,
+    QHBoxLayout, QVBoxLayout, QLabel)
+from PyQt5.QtGui import QFont
 
 REMIND_DIR = Path.home().joinpath('.remindwindows')
 if REMIND_DIR.exists():
@@ -41,19 +44,57 @@ def text_to_fpath(text):
     return fpath
 
 
-class Reminder(object):
+class Reminder(QWidget):
     text = ""
     path = None
     def __init__(self, path):
         self.path = path
         with path.open() as f:
             self.text = f.read()
-    
+
+    def launch(self):
+        super().__init__()
+        self.initUI()
+
     def __repr__(self):
         return self.text
 
     def delete(self):
         self.path.unlink()
+        self.close()
+
+    def initUI(self):
+        self.label = QLabel(self.text, self)
+        font = QFont("Mono", 12, QFont.Bold)
+        self.label.setFont(font)
+
+        donebtn = QPushButton("Done", self)
+        laterbtn = QPushButton("Later", self)
+        donebtn.clicked.connect(self.close)
+        laterbtn.clicked.connect(self.close)
+
+        hbox = QHBoxLayout()
+        hbox.addStretch(1)
+        hbox.addWidget(donebtn)
+        hbox.addWidget(laterbtn)
+
+        vbox = QVBoxLayout()
+        vbox.addStretch(1)
+        vbox.addWidget(self.label, Qt.AlignTop)
+        vbox.addLayout(hbox)
+
+        self.setLayout(vbox)
+
+        self.resize(250, 150)
+        self.center()
+        self.setWindowTitle(self.text)
+        self.show()
+
+    def center(self):
+        qr = self.frameGeometry()
+        cp = QDesktopWidget().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
 
 def add_reminder(text):
     """Create a reminder file with text $text."""
@@ -67,5 +108,8 @@ def get_current_reminders():
     return [Reminder(r) for r in REMIND_DIR.iterdir()]
 
     
-
-print(get_current_reminders())
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    rems = get_current_reminders()
+    [r.launch() for r in rems]
+    sys.exit(app.exec_())
