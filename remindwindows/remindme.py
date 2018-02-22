@@ -4,10 +4,16 @@ from pathlib import Path
 import re
 import string
 import hashlib
+import daemon
+import time
+import lockfile
+import signal
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QDesktopWidget,
     QHBoxLayout, QVBoxLayout, QLabel)
 from PyQt5.QtGui import QFont
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 REMIND_DIR = Path.home().joinpath('.remindwindows')
 if REMIND_DIR.exists():
@@ -108,8 +114,35 @@ def get_current_reminders():
     return [Reminder(r) for r in REMIND_DIR.iterdir()]
 
     
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
+def do_main_program(args):
+    app = QApplication(args)
     rems = get_current_reminders()
     [r.launch() for r in rems]
     sys.exit(app.exec_())
+
+    
+
+def program_cleanup():
+    pass
+
+def reload():
+    pass
+
+if __name__ == "__main__":
+    PIDFILE = '/tmp/remindwindows.pid'
+    if Path(PIDFILE+'.lock').exists():
+        print("Error: remindwindows already running!")
+        sys.exit(1)
+
+    context = daemon.DaemonContext(
+       	pidfile=lockfile.FileLock(PIDFILE))
+
+    context.signal_map = {
+       signal.SIGTERM: program_cleanup,
+       signal.SIGHUP: 'terminate',
+       signal.SIGUSR1: reload,
+    }
+    
+    #do_main_program(sys.argv)
+    with context:
+        do_main_program(sys.argv)
