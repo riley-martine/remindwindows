@@ -8,7 +8,8 @@ import daemon
 import time
 import lockfile
 import signal
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, QObject, QFileSystemWatcher, pyqtSignal, pyqtSlot
+import PyQt5.QtCore
 from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QDesktopWidget,
     QHBoxLayout, QVBoxLayout, QLabel)
 from PyQt5.QtGui import QFont
@@ -97,10 +98,12 @@ class Reminder(QWidget):
         self.show()
 
     def center(self):
+        # TODO place the window in unoccupied position
         qr = self.frameGeometry()
         cp = QDesktopWidget().availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
+    
 
 def add_reminder(text):
     """Create a reminder file with text $text."""
@@ -111,13 +114,85 @@ def add_reminder(text):
     
 def get_current_reminders():
     """Get a list of Reminder objects for all current reminders."""
-    return [Reminder(r) for r in REMIND_DIR.iterdir()]
+    return [Reminder(r) for r in REMIND_DIR.iterdir() if str(r).endswith('.rem')]
 
+
+class RemindHandler(FileSystemEventHandler, QThread):
+    created = pyqtSignal(str)
+    deleted = pyqtSignal(str)
+
+    def __init__(self, path):
+        super(RemindHandler, self).__init__()
+        self.path = path
+
+    def on_created(self, event):
+        if event.src_path.endswith('.rem'): # Ignore swap files etc
+            self.created.emit(event.src_path)
+
+    def on_deleted(self, event):
+        if event.src_path.endswith('.rem'):
+            self.deleted.emit(event.src_path)
+
+class FileCreatedWatcher(QThread):
+    def __init__(self, path):
+        super(FileCreatedWatcher, self).__init__()
+        self.path = path
+        self.observer = Observer()
+        self.event_handler = RemindHandler(self.path)
+        self.observer.schedule(self.event_handler, self.path)
+        self.observer.start()
     
+    def run(self):
+        pass
+
+    def getEmitter(self):
+        return self.event_handler
+
+
+class RemindApplication(QApplication):
+    def __init__(self, args):
+        super(RemindApplication, self).__init__(args)
+        
+        path = str(REMIND_DIR)
+
+        self.watcher = FileCreatedWatcher(path)
+        self.watcher.getEmitter().created.connect(self.file_created)
+        self.watcher.getEmitter().deleted.connect(self.file_deleted)
+
+        self.reminders = get_current_reminders()
+        [r.launch() for r in self.reminders]
+        
+    @pyqtSlot(str)
+    def file_created(self, src_path):
+        #print(src_path + " "+ str(bool((self.is_existing_reminder(src_path)))))
+        if not self.is_existing_reminder(src_path):
+            r = Reminder(Path(src_path))
+            r.launch()
+            self.reminders.append(r)
+        else:
+            r = self.is_existing_reminder(src_path)
+            r.close()
+            self.reminders.remove(r)
+            r = Reminder(Path(src_path))
+            r.launch()
+            self.reminders.append(r)
+
+    @pyqtSlot(str)
+    def file_deleted(self, src_path):
+        r = self.is_existing_reminder(src_path)
+        r.close()
+        self.reminders.remove(r)
+
+    def is_existing_reminder(self, path):
+        for r in self.reminders:
+            if r.path == Path(path):
+                return r
+        return False
+
+
 def do_main_program(args):
-    app = QApplication(args)
-    rems = get_current_reminders()
-    [r.launch() for r in rems]
+    app = RemindApplication(args)
+    
     sys.exit(app.exec_())
 
     
@@ -143,6 +218,6 @@ if __name__ == "__main__":
        signal.SIGUSR1: reload,
     }
     
-    #do_main_program(sys.argv)
-    with context:
-        do_main_program(sys.argv)
+    do_main_program(sys.argv)
+    #with context:
+    #    do_main_program(sys.argv)
