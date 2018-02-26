@@ -74,6 +74,12 @@ class Reminder(QWidget):
         self.path.unlink()
         self.close()
 
+    def update_label(self):
+        with self.path.open() as reminder_file:
+            newtext = reminder_file.read()
+
+        self.label.setText(newtext)
+
     def init_ui(self):
         """Create the UI for our widget."""
         self.label = QLabel(self.text, self)
@@ -82,7 +88,7 @@ class Reminder(QWidget):
 
         donebtn = QPushButton("Done", self)
         laterbtn = QPushButton("Later", self)
-        donebtn.clicked.connect(self.close)
+        donebtn.clicked.connect(self.delete)
         laterbtn.clicked.connect(self.close)
 
         hbox = QHBoxLayout()
@@ -127,6 +133,7 @@ class RemindHandler(FileSystemEventHandler, QThread):
     """Handles file events from watchdog being passed to our application."""
     created = pyqtSignal(str)
     deleted = pyqtSignal(str)
+    changed = pyqtSignal(str)
     path = None
 
     def __init__(self, path):
@@ -140,6 +147,9 @@ class RemindHandler(FileSystemEventHandler, QThread):
     def on_deleted(self, event):
         if event.src_path.endswith('.rem'):
             self.deleted.emit(event.src_path)
+
+    def on_changed(self, event):
+        print("File changed!") # Note: this does not appear to fire on file edits.
 
 
 class FileCreatedWatcher(QThread):
@@ -193,12 +203,7 @@ class RemindApplication(QApplication):
             reminder.launch()
             self.reminders.append(reminder)
         else:
-            # TODO make this update instead of re-initialize
-            reminder.close()
-            self.reminders.remove(reminder)
-            new_reminder = Reminder(Path(src_path))
-            new_reminder.launch()
-            self.reminders.append(new_reminder)
+            reminder.update_label()
 
     @pyqtSlot(str)
     def file_deleted(self, src_path):
