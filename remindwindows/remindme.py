@@ -3,8 +3,6 @@
 
 import sys
 from pathlib import Path
-import re
-import hashlib
 import signal
 import lockfile
 import daemon
@@ -51,6 +49,7 @@ class Reminder(QWidget):
         self.close()
 
     def update_label(self):
+        """Pull in text from own file and replace label."""
         with self.path.open() as reminder_file:
             newtext = reminder_file.read()
 
@@ -116,10 +115,6 @@ class RemindHandler(FileSystemEventHandler, QThread):
     def on_deleted(self, event):
         if event.src_path.endswith('.rem'):
             self.deleted.emit(event.src_path)
-
-    def on_changed(self, event):
-        print("File changed!") # Note: this does not appear to fire on file edits.
-
 
 class FileCreatedWatcher(QThread):
     """Creates and runs observer."""
