@@ -7,6 +7,7 @@ from argparse import ArgumentParser
 from hypothesis import given, note, assume
 from hypothesis.strategies import text
 from pytest import fixture, raises
+from tempfile import TemporaryDirectory
 
 from src.api import text_to_fpath, parse_args, run_args
 from src.remindme import REMIND_DIR
@@ -96,8 +97,33 @@ def test_add_number_to_end(move_reminders):
         with child.open('r') as remind_file:
             assert remind_file.read() == 'reminder'
 
+@given(reminder_text=text(alphabet=string.printable, min_size=1).filter(lambda x: x.isprintable()))
+def test_read_same_as_passed(move_reminders, reminder_text):
+    """Test that the value passed to a reminder is the value read from a reminder."""
+    clean_reminders()
+    assume(not reminder_text.startswith('-'))
 
-@given(fname=text(alphabet=string.ascii_letters, min_size=1))
+    parsed = parse_args(['add', reminder_text])
+    run_args(parsed)
+    with parsed.fpath.open('r') as reminder_file:
+        assert reminder_file.read() == reminder_text
+
+
+def is_valid_filename(filename):
+    wrongfuncs = [lambda s: s == '',
+                  lambda s: not s.isprintable(),
+                  lambda s: s.isdigit(),
+                  lambda s: '/' in s,
+                  lambda s: '*' in s,
+                  lambda s: s.startswith('+'),
+                  lambda s: s.startswith('-'),
+                  lambda s: s.startswith('.'),
+                  lambda s: '\\' in s]
+
+    return not any([f(filename) for f in wrongfuncs])
+
+
+@given(fname=text(alphabet=string.printable, min_size=1).filter(lambda x: is_valid_filename(x)))
 def test_filename_collision(move_reminders, fname):
     """Adding with the same filename should raise an error."""
     clean_reminders()
@@ -106,6 +132,7 @@ def test_filename_collision(move_reminders, fname):
         run_args(parse_args(['add', '-n', fname, "reminder text"],
                             parser_class=ErrorRaisingArgumentParser))
     assert "already a reminder" in str(error)
+
 
 @given(text())
 def test_add_valid_filename(filename):
@@ -116,36 +143,19 @@ def test_add_valid_filename(filename):
     clean_reminders()
     note(f"Filename: {filename}")
 
-    wrongfuncs = [lambda s: s == '',
-                  lambda s: not s.isprintable(),
-                  lambda s: s.isdigit(),
-                  lambda s: '/' in s,
-                  lambda s: '*' in s,
-                  lambda s: '.' in s,
-                  lambda s: s.startswith('+'),
-                  lambda s: s.startswith('-'),
-                  lambda s: '\\' in s]
-
     wrong = False
-    for func in wrongfuncs:
-        if func(filename):
-            wrong = True
-            with raises(ValueError):
-                parse_args(['add', '-n', filename, "The Reminder Text"],
-                           parser_class=ErrorRaisingArgumentParser)
-            return
+    if not is_valid_filename(filename):
+        wrong = True
+        with raises(ValueError):
+            parse_args(['add', '-n', filename, "The Reminder Text"],
+                       parser_class=ErrorRaisingArgumentParser)
+        return
 
     if not wrong:
-        tmpdir = Path('tmp')
-        tmpdir.mkdir()
-        os.chdir(tmpdir)
-
-        path = Path(filename)
-        path.touch()
-        path.unlink()
-
-        os.chdir('..')
-        tmpdir.rmdir()
+        with TemporaryDirectory() as tmpdirname:
+            path = tmpdirname / Path(filename)
+            path.touch()
+            path.unlink()
 
 
 @given(text())
@@ -173,13 +183,7 @@ def test_rejects_invalid_reminders(reminder):
         parsed = parse_args(['add', reminder])
         assert reminder == parsed.reminder
 
-        tmpdir = Path('tmp')
-        tmpdir.mkdir()
-        os.chdir(tmpdir)
-
-        path = Path(parsed.fpath)
-        path.touch()
-        path.unlink()
-
-        os.chdir(Path('..'))
-        tmpdir.rmdir()
+        with TemporaryDirectory() as tmpdirname:
+            path = tmpdirname / Path(parsed.fpath)
+            path.touch()
+            path.unlink()

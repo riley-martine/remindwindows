@@ -117,16 +117,15 @@ def resolve_reminder(file):
     Turn an index or filename into a path.
     Can be passed arguments in the form '0', 'remind.rem', 'remind'
     """
-    badchars = ['/', '.', '\\', '*']
+    badchars = ['/', '\\', '*']
     for char in badchars:
         if char in file:
             raise argparse.ArgumentTypeError(f"Filename cannot contain character '{char}'.")
     
-    if file.startswith('-'):
-        raise argparse.ArgumentTypeError(f"Filename cannot contain character '-'.")
-        
-    if file.startswith('+'):
-        raise argparse.ArgumentTypeError(f"Filename cannot contain character '+'.")
+    badstarts = ['-', '+', '.']
+    for char in badstarts:
+        if file.startswith(char):
+            raise argparse.ArgumentTypeError(f"Filename cannot begin with  character '{char}'.")
 
     if file == '':
         raise argparse.ArgumentTypeError("Filename cannot be empty.")
