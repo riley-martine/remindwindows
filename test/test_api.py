@@ -11,10 +11,11 @@ from pytest import fixture, raises
 from src.api import text_to_fpath, parse_args, run_args
 from src.remindme import REMIND_DIR
 
-@fixture(scope="module")
+
+rd = REMIND_DIR
+@fixture(scope="session")
 def move_reminders():
     """Fixture to backup and restore saved reminders while running tests."""
-    rd = REMIND_DIR
     rdt = REMIND_DIR.parent / '.tmpremindwindows'
     if rdt.exists():
         if rd.exists():
@@ -26,6 +27,8 @@ def move_reminders():
         if rd.exists():
             REMIND_DIR.rename(rdt)
         rd.mkdir()
+
+    yield rd
     for child in rd.iterdir():
         child.unlink()
 
@@ -35,7 +38,7 @@ def move_reminders():
 
 def clean_reminders():
     """Remove tested reminders."""
-    for child in REMIND_DIR.iterdir():
+    for child in rd.iterdir():
         child.unlink()
 
 class ErrorRaisingArgumentParser(ArgumentParser):
@@ -82,7 +85,7 @@ def test_set_alphanum(reminder_text):
     if len(orig) > 1:
         assert orig == new
 
-def test_add_number_to_end():
+def test_add_number_to_end(move_reminders):
     """Adding the same reminder text should result in files that are numbered."""
     clean_reminders()
     for _ in range(3):
@@ -94,8 +97,8 @@ def test_add_number_to_end():
             assert remind_file.read() == 'reminder'
 
 
-@given(text(alphabet=string.ascii_letters, min_size=1))
-def test_filename_collision(fname):
+@given(fname=text(alphabet=string.ascii_letters, min_size=1))
+def test_filename_collision(move_reminders, fname):
     """Adding with the same filename should raise an error."""
     clean_reminders()
     run_args(parse_args(['add', '-n', fname, "reminder1"], parser_class=ErrorRaisingArgumentParser))
