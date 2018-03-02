@@ -1,2 +1,6 @@
+htmlcov
 *.swp
 *.pyc
+.pytest_cache
+.hypothesis
+.coverage

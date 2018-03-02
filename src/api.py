@@ -8,22 +8,25 @@ import hashlib
 import subprocess
 from pathlib import Path
 import tabulate
-from remindme import REMIND_DIR
+try:
+    from remindme import REMIND_DIR
+except ModuleNotFoundError:
+    from .remindme import REMIND_DIR
 
 
 class DefaultName(argparse.Action):
     """Have a default filename that is created from the reminder argument."""
     def __call__(self, parser, namespace, values, option_string=None):
-        namespace.fpath = text_to_fpath(values)
+        namespace.fpathdefault = text_to_fpath(values)
         namespace.reminder = values
 
-def parse_args(args):
+def parse_args(args, parser_class=argparse.ArgumentParser):
     """Parse CLI arguments via argparse and return the parsed args."""
-    parser = argparse.ArgumentParser(description="Display reminders as persistent windows")
+    parser = parser_class(description="Display reminders as persistent windows")
     subparsers = parser.add_subparsers(help="sub-command help", dest="cmd")
 
     parser_add = subparsers.add_parser('add', help='Add a New Reminder')
-    parser_add.add_argument('reminder', type=str, action=DefaultName,
+    parser_add.add_argument('reminder', type=reminder_string, action=DefaultName,
                             help='The text of the reminder')
     parser_add.add_argument('-n', '--filename', type=not_reminder, required=False,
                             dest='fpath',
@@ -52,7 +55,11 @@ def parse_args(args):
         parser.print_help()
         sys.exit(1)
 
-    return parser.parse_args(args)
+    parsed = parser.parse_args(args)
+    if not parsed.fpath:
+        parsed.fpath = parsed.fpathdefault
+    return parsed
+
 
 def run_args(params):
     """Evaluate the arguments passed and run the functions for them."""
@@ -89,20 +96,44 @@ def is_reminder(file):
     return path
 
 def not_reminder(file):
-    """Detect if a file is not an existing reminder"""
+    """Detect if a file is not an existing reminder, but could be."""
+    if file.isdigit():
+        raise argparse.ArgumentTypeError("Cannot name reminder only digits.")
     path = resolve_reminder(file)
     if path.exists():
         msg = f"{path.name} is already a reminder file."
         raise argparse.ArgumentTypeError(msg)
     return path
 
+def reminder_string(s):
+    if s == '':
+        raise argparse.ArgumentTypeError("Reminder cannot be empty.")
+    if not s.isprintable():
+        raise argparse.ArgumentTypeError("Reminder must be printable.")
+    return s
+
 def resolve_reminder(file):
     """
     Turn an index or filename into a path.
     Can be passed arguments in the form '0', 'remind.rem', 'remind'
     """
-    if isinstance(file, int):
-        file = str(file)
+    badchars = ['/', '.', '\\', '*']
+    for char in badchars:
+        if char in file:
+            raise argparse.ArgumentTypeError(f"Filename cannot contain character '{char}'.")
+    
+    if file.startswith('-'):
+        raise argparse.ArgumentTypeError(f"Filename cannot contain character '-'.")
+        
+    if file.startswith('+'):
+        raise argparse.ArgumentTypeError(f"Filename cannot contain character '+'.")
+
+    if file == '':
+        raise argparse.ArgumentTypeError("Filename cannot be empty.")
+    
+    if not file.isprintable():
+        raise argparse.ArgumentTypeError("Filename must be printable.")
+
 
     if file.endswith('.rem'):
         fpath = REMIND_DIR / file
@@ -151,7 +182,10 @@ def text_to_fpath(text):
     alphanum = pattern.sub("", text)
     shortened = alphanum[:MAX_LEN]             # Restrict length
     if len(shortened) < 1:                     # If the reminder is something silly like "@@@@@"
-        shortened = hashlib.sha1(text.encode("utf8")).hexdigest()[:MAX_LEN]
+        if len(text) > 0:
+            shortened = hashlib.sha1(text.encode("utf8", 'replace')).hexdigest()[:MAX_LEN]
+        else:
+            shortened = "noname"
     fname = shortened + EXTENSION
     fpath = REMIND_DIR.joinpath(fname)         # Create path
 
