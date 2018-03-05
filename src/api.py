@@ -56,7 +56,7 @@ def parse_args(args, parser_class=argparse.ArgumentParser):
         sys.exit(1)
 
     parsed = parser.parse_args(args)
-    if not parsed.fpath:
+    if hasattr(parsed, 'fpath') and parsed.fpath == None:
         parsed.fpath = parsed.fpathdefault
     return parsed
 
@@ -70,7 +70,7 @@ def run_args(params):
     elif params.cmd in ['list', 'ls']:
         list_reminders()
     elif params.cmd in ['show', 'cat']:
-        show_reminder(params.file)
+        print(get_reminder(params.file))
     elif params.cmd in ['delete', 'rm', 'del']:
         delete_reminders(params.files, params.force)
     elif params.cmd in ['edit', 'vim']:
@@ -164,10 +164,10 @@ def delete_reminders(files, force):
         if delete_str in ['y', 'Y', '']:
             file.unlink()
 
-def show_reminder(path):
+def get_reminder(path):
     """Given an index or reminder file, display it."""
     with path.open('r') as remind_file:
-        print(remind_file.read())
+        return remind_file.read()
 
 def text_to_fpath(text):
     """Turns a reminder text into a suitable filename.
@@ -180,11 +180,12 @@ def text_to_fpath(text):
     pattern = re.compile(r'[\W_]+', re.UNICODE) # Restrict to alphanumeric
     alphanum = pattern.sub("", text)
     shortened = alphanum[:MAX_LEN]             # Restrict length
-    if len(shortened) < 1:                     # If the reminder is something silly like "@@@@@"
+    if len(shortened) < 1 or shortened.isdigit(): # If the reminder is something silly like "@@@@@"
         if len(text) > 0:
             shortened = hashlib.sha1(text.encode("utf8", 'replace')).hexdigest()[:MAX_LEN]
         else:
             shortened = "noname"
+
     fname = shortened + EXTENSION
     fpath = REMIND_DIR.joinpath(fname)         # Create path
 
