@@ -1,5 +1,4 @@
 """Tests for the argparsed API of remindwindows"""
-
 import string
 import os
 from pathlib import Path
@@ -9,7 +8,7 @@ from hypothesis.strategies import text
 from pytest import fixture, raises
 from tempfile import TemporaryDirectory
 
-from src.api import text_to_fpath, parse_args, run_args
+from src.api import text_to_fpath, parse_args, run_args, get_reminder, list_reminders
 from src.remindme import REMIND_DIR
 
 
@@ -48,33 +47,37 @@ class ErrorRaisingArgumentParser(ArgumentParser):
         """Raise error in a viewable way."""
         raise ValueError(message)  # reraise an error
 
+def get_parts(filename):
+    name = '.'.join(filename.split('.')[:-1])
+    ext = ''.join(filename.split('.')[-1:])
+    return name, ext
 
 @given(text())
 def test_fpath_alphanum(reminder_text):
     """Regardless of input, filename should be alphanumeric."""
     fpath = text_to_fpath(reminder_text).name
-    name, ext = fpath.split('.')
+    name, ext = get_parts(fpath)
     assert name.isalnum()
 
 @given(text())
 def test_ext(reminder_text):
     """The file extension should always be '.rem'"""
     fpath = text_to_fpath(reminder_text).name
-    name, ext = fpath.split('.')
+    name, ext = get_parts(fpath)
     assert ext == 'rem'
 
 @given(text())
 def test_len(reminder_text):
     """Length should always be less than or equal to 10 characters."""
     fpath = text_to_fpath(reminder_text).name
-    name, ext = fpath.split('.')
+    name, ext = get_parts(fpath)
     assert len(name) <= 10
 
 @given(text())
 def test_set_alphanum(reminder_text):
     """If the text has alphanumeric characters, they should be preserved in the filename."""
     fpath = text_to_fpath(reminder_text).name
-    name, ext = fpath.split('.')
+    name, ext = get_parts(fpath)
 
     if reminder_text == '':
         reminder_text = 'noname'
@@ -107,13 +110,60 @@ def test_read_same_as_passed(move_reminders, reminder_text):
     run_args(parsed)
     with parsed.fpath.open('r') as reminder_file:
         assert reminder_file.read() == reminder_text
+        assert get_reminder(parsed.fpath) == reminder_text
 
+
+@given(reminder_text=text(alphabet=string.printable, min_size=1).filter(lambda x: x.isprintable()),
+       filename=text(alphabet=string.printable, min_size=1).filter(lambda x: is_valid_filename(x)))
+def test_show_reminder(capsys, move_reminders, reminder_text, filename):
+    """Test that show works as expected."""
+    clean_reminders()
+    assume(not reminder_text.startswith('-'))
+
+    add_parsed = parse_args(['add', '-n', 'A'+filename, 'A'+reminder_text])
+    add_parsed2 = parse_args(['add', '-n', 'Z'+filename, 'Z'+reminder_text])
+    run_args(add_parsed)
+    run_args(add_parsed2)
+
+    # Test by index
+    run_args(parse_args(['show', '0']))
+    out, err = capsys.readouterr()
+    assert out == 'A' + reminder_text + '\n'
+
+    run_args(parse_args(['show', '1']))
+    out, err = capsys.readouterr()
+    assert out == 'Z' + reminder_text + '\n'
+
+    # Test by filename
+    run_args(parse_args(['show', add_parsed.fpath.name]))
+    out, err = capsys.readouterr()
+    assert out == 'A' + reminder_text + '\n'
+
+    run_args(parse_args(['show', add_parsed2.fpath.name]))
+    out, err = capsys.readouterr()
+    assert out == 'Z' + reminder_text + '\n'
+
+    #print(list_reminders())
+
+    # Test by filename minus extension
+    name1, ext1 = get_parts(add_parsed.fpath.name)
+    run_args(parse_args(['show', name1]))
+    out, err = capsys.readouterr()
+    assert out == 'A' + reminder_text + '\n'
+
+    name2, ext2 = get_parts(add_parsed2.fpath.name)
+    run_args(parse_args(['show', name2]))
+    out, err = capsys.readouterr()
+    assert out == 'Z' + reminder_text + '\n'
+
+ 
 
 def is_valid_filename(filename):
     wrongfuncs = [lambda s: s == '',
                   lambda s: not s.isprintable(),
                   lambda s: s.isdigit(),
                   lambda s: '/' in s,
+                  lambda s: '\\' in s,
                   lambda s: '*' in s,
                   lambda s: s.startswith('+'),
                   lambda s: s.startswith('-'),
@@ -164,6 +214,7 @@ def test_rejects_invalid_reminders(reminder):
     Empty and unprintable reminders should be rejected.
     All other reminders should be able to be added.
     """
+    #TODO allow newlines
     clean_reminders()
     note(f"Reminder: {reminder}")
     assume(not reminder.startswith('-'))
@@ -184,6 +235,10 @@ def test_rejects_invalid_reminders(reminder):
         assert reminder == parsed.reminder
 
         with TemporaryDirectory() as tmpdirname:
+            note(f"Namespace: {parsed}")
+            note(f"Hasattr: {getattr(parsed, 'fpath')}")
+            note(f"Path: {parsed.fpath}")
             path = tmpdirname / Path(parsed.fpath)
+            assert is_valid_filename(parsed.fpath.name)
             path.touch()
             path.unlink()
