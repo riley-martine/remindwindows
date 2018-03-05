@@ -160,7 +160,7 @@ def test_show_reminder(capsys, move_reminders, reminder_text, filename):
 
 def is_valid_filename(filename):
     wrongfuncs = [lambda s: s == '',
-                  lambda s: not s.isprintable(),
+                  lambda s: not all([c in string.printable for c in s]),
                   lambda s: s.isdigit(),
                   lambda s: '/' in s,
                   lambda s: '\\' in s,
@@ -207,6 +207,11 @@ def test_add_valid_filename(filename):
             path.touch()
             path.unlink()
 
+@given(text(alphabet=string.ascii_letters+string.whitespace+string.digits, min_size=1))
+def test_whitespace_in_reminder(reminder_text):
+    """Test that a reminder can contain whitespace."""
+    parsed = parse_args(['add', reminder_text])
+    assert parsed.reminder == reminder_text
 
 @given(text())
 def test_rejects_invalid_reminders(reminder):
@@ -214,13 +219,12 @@ def test_rejects_invalid_reminders(reminder):
     Empty and unprintable reminders should be rejected.
     All other reminders should be able to be added.
     """
-    #TODO allow newlines
     clean_reminders()
     note(f"Reminder: {reminder}")
     assume(not reminder.startswith('-'))
 
     wrongfuncs = [(lambda s: s == '', "empty"),
-                  (lambda s: not s.isprintable(), "printable")]
+                  (lambda s: not all([c in string.printable for c in s]), "printable")]
 
     wrong = False
     for func, err_str in wrongfuncs:

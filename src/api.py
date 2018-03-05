@@ -4,6 +4,7 @@
 import argparse
 import sys
 import re
+import string
 import hashlib
 import subprocess
 from pathlib import Path
@@ -108,7 +109,7 @@ def not_reminder(file):
 def reminder_string(s):
     if s == '':
         raise argparse.ArgumentTypeError("Reminder cannot be empty.")
-    if not s.isprintable():
+    if not all([c in string.printable for c in s]):
         raise argparse.ArgumentTypeError("Reminder must be printable.")
     return s
 
@@ -130,7 +131,7 @@ def resolve_reminder(file):
     if file == '':
         raise argparse.ArgumentTypeError("Filename cannot be empty.")
     
-    if not file.isprintable():
+    if not all([c in string.printable for c in file]):
         raise argparse.ArgumentTypeError("Filename must be printable.")
 
 
