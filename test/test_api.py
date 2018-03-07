@@ -52,6 +52,28 @@ def get_parts(filename):
     ext = ''.join(filename.split('.')[-1:])
     return name, ext
 
+
+def test_list_when_no_reminders(capsys, move_reminders):
+    """Test that when no reminders exist, we handle that."""
+    clean_reminders()
+    run_args(parse_args(['list']))
+    out, err = capsys.readouterr()
+    assert "No reminders found" in out
+
+def test_list_reminder_names(capsys, move_reminders):
+    """Test that reminders added are listed."""
+    clean_reminders()
+    run_args(parse_args(['add', 'reminder']))
+    run_args(parse_args(['add', 'dothething']))
+    run_args(parse_args(['add', 'another']))
+    run_args(parse_args(['list']))
+    out, err = capsys.readouterr()
+    assert "2  reminder.rem\n" in out
+    assert "1  dothething.rem\n" in out
+    assert "0  another.rem\n" in out
+    assert len(out.split('\n')) == 6
+
+
 @given(text())
 def test_fpath_alphanum(reminder_text):
     """Regardless of input, filename should be alphanumeric."""
@@ -155,12 +177,24 @@ def test_show_reminder(capsys, move_reminders, reminder_text, filename):
     run_args(parse_args(['show', name2]))
     out, err = capsys.readouterr()
     assert out == 'Z' + reminder_text + '\n'
-
  
+
+def test_show_index_out_of_bounds(move_reminders):
+    clean_reminders()
+    with raises(ValueError) as error:
+        run_args(parse_args(['show', '0'], parser_class=ErrorRaisingArgumentParser))
+    assert "List index out of range" in str(error)
+
+    run_args(parse_args(['add', 'reminder']))
+    run_args(parse_args(['show', '0'], parser_class=ErrorRaisingArgumentParser))
+    with raises(ValueError) as error2:
+        run_args(parse_args(['show', '1'], parser_class=ErrorRaisingArgumentParser))
+    assert "List index out of range" in str(error2)
+
 
 def is_valid_filename(filename):
     wrongfuncs = [lambda s: s == '',
-                  lambda s: not all([c in string.printable for c in s]),
+                  lambda s: not s.isprintable(),
                   lambda s: s.isdigit(),
                   lambda s: '/' in s,
                   lambda s: '\\' in s,
@@ -207,7 +241,7 @@ def test_add_valid_filename(filename):
             path.touch()
             path.unlink()
 
-@given(text(alphabet=string.ascii_letters+string.whitespace+string.digits, min_size=1))
+@given(text(alphabet=string.ascii_letters+string.whitespace+string.digits, min_size=1).filter(is_valid_filename))
 def test_whitespace_in_reminder(reminder_text):
     """Test that a reminder can contain whitespace."""
     parsed = parse_args(['add', reminder_text])
