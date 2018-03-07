@@ -54,7 +54,6 @@ def parse_args(args, parser_class=argparse.ArgumentParser):
 
     if not args:
         parser.print_help()
-        sys.exit(1)
 
     parsed = parser.parse_args(args)
     if hasattr(parsed, 'fpath') and parsed.fpath == None:

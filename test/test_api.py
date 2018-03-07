@@ -73,6 +73,11 @@ def test_list_reminder_names(capsys, move_reminders):
     assert "0  another.rem\n" in out
     assert len(out.split('\n')) == 6
 
+def test_print_help_when_no_arguments(capsys):
+    run_args(parse_args([]))
+    out, err = capsys.readouterr()
+    assert "usage: " in out
+
 
 @given(text())
 def test_fpath_alphanum(reminder_text):
