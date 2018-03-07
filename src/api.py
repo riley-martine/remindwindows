@@ -64,8 +64,6 @@ def parse_args(args, parser_class=argparse.ArgumentParser):
 def run_args(params):
     """Evaluate the arguments passed and run the functions for them."""
     if params.cmd == 'add':
-        if params.fpath is None:
-            params.fpath = text_to_fpath(params.reminder)
         add_reminder(params.reminder, params.fpath)
     elif params.cmd in ['list', 'ls']:
         list_reminders()
