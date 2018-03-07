@@ -118,7 +118,7 @@ def resolve_reminder(file):
     Turn an index or filename into a path.
     Can be passed arguments in the form '0', 'remind.rem', 'remind'
     """
-    badchars = ['/', '\\', '*']
+    badchars = ['/', '\\', '*', '\t', '\n', '\x0b', '\r']
     for char in badchars:
         if char in file:
             raise argparse.ArgumentTypeError(f"Filename cannot contain character '{char}'.")
@@ -152,7 +152,10 @@ def list_reminders():
     """Print a list of all the reminders, alongside their index."""
     files = get_reminder_filenames()
     indexed = list(zip(range(len(files)), files))
-    print(tabulate.tabulate(indexed))
+    if len(indexed) > 0:
+        print(tabulate.tabulate(indexed))
+    else:
+        print("No reminders found")
 
 def delete_reminders(files, force):
     """Delete a reminder file."""
@@ -210,5 +213,5 @@ def add_reminder(text, fpath):
 
 if __name__ == '__main__':
     parsed = parse_args(sys.argv[1:])
-    print(parsed)
+    # print(parsed)
     run_args(parsed)
