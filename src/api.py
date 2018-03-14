@@ -60,7 +60,6 @@ def parse_args(args, parser_class=argparse.ArgumentParser):
         parsed.fpath = parsed.fpathdefault
     return parsed
 
-
 def run_args(params):
     """Evaluate the arguments passed and run the functions for them."""
     if params.cmd == 'add':
@@ -72,18 +71,16 @@ def run_args(params):
     elif params.cmd in ['delete', 'rm', 'del']:
         delete_reminders(params.files, params.force)
     elif params.cmd in ['edit', 'vim']:
-        edit_reminder(params.file)
-
+        return edit_reminder(params.file)
 
 def edit_reminder(path):
     """Open system editor for editing reminder."""
     # We /could/ use xdg-open here, but I like vim.
-    subprocess.call(["vim", str(path)])
+    return subprocess.call(["vim", str(path)])
 
 def get_reminder_filenames():
     """Get a list of all the reminder filenames, sorted alphabetically."""
     return sorted([f.name for f in REMIND_DIR.iterdir() if f.name.endswith('.rem')])
-
 
 def is_reminder(file):
     """Returns boolean for whether reminder file exists"""
@@ -115,7 +112,7 @@ def resolve_reminder(file):
     Turn an index or filename into a path.
     Can be passed arguments in the form '0', 'remind.rem', 'remind'
     """
-    badchars = ['/', '\\', '*', '\t', '\n', '\x0b', '\r']
+    badchars = ['/', '\\', '*', '\t', '\n', '\x0b', '\r', '\x0c']
     for char in badchars:
         if char in file:
             raise argparse.ArgumentTypeError(f"Filename cannot contain character '{char}'.")
@@ -148,7 +145,18 @@ def resolve_reminder(file):
 def list_reminders():
     """Print a list of all the reminders, alongside their index."""
     files = get_reminder_filenames()
-    indexed = list(zip(range(len(files)), files))
+    
+    max_len = 20
+    texts = []
+    for file in files:
+        with open(resolve_reminder(file)) as reminder_file:
+            text = reminder_file.read()
+            if len(text) > max_len - 3:
+                texts.append(text[:max_len-3] + '...')
+            else:
+                texts.append(text)
+
+    indexed = list(zip(range(len(files)), files, texts))
     if len(indexed) > 0:
         print(tabulate.tabulate(indexed))
     else:
@@ -208,7 +216,6 @@ def add_reminder(text, fpath):
         reminder_file.write(text)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__': # pragma: no cover
     parsed = parse_args(sys.argv[1:])
-    # print(parsed)
     run_args(parsed)
