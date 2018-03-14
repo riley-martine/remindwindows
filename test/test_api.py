@@ -3,7 +3,8 @@ import string
 import os
 from pathlib import Path
 from argparse import ArgumentParser
-from hypothesis import given, note, assume
+from unittest.mock import patch
+from hypothesis import given, note, assume, reproduce_failure
 from hypothesis.strategies import text
 from pytest import fixture, raises
 from tempfile import TemporaryDirectory
@@ -48,10 +49,72 @@ class ErrorRaisingArgumentParser(ArgumentParser):
         raise ValueError(message)  # reraise an error
 
 def get_parts(filename):
+    """Get the name and extension of a filename."""
     name = '.'.join(filename.split('.')[:-1])
     ext = ''.join(filename.split('.')[-1:])
     return name, ext
 
+def is_valid_filename(filename):
+    wrongfuncs = [lambda s: s == '',
+                  lambda s: not s.isprintable(),
+                  lambda s: s.isdigit(),
+                  lambda s: '/' in s,
+                  lambda s: '*' in s,
+                  lambda s: s.startswith('+'),
+                  lambda s: s.startswith('-'),
+                  lambda s: s.startswith('.'),
+                  lambda s: '\\' in s]
+
+    return not any([f(filename) for f in wrongfuncs])
+
+@patch('subprocess.call', lambda x: x)
+def test_subprocess_opens_vim(move_reminders):
+    """Test that edit works as expected."""
+    clean_reminders()
+    namespace = parse_args(['add', 'reminder'])
+    run_args(namespace)
+    a = run_args(parse_args(['edit', 'reminder']))
+    b = run_args(parse_args(['edit', '0']))
+    c = run_args(parse_args(['edit', 'reminder.rem']))
+    assert a == b
+    assert b == c
+    assert a == ['vim', str(REMIND_DIR / 'reminder.rem')]
+
+@patch('builtins.input', lambda x: 'y')
+def test_delete_reminder(capsys, move_reminders):
+    """Test that delete actually deletes and prompts for deletion."""
+    #TODO create test with lambda x: 'n'
+    clean_reminders()
+    run_args(parse_args(['add', 'reminder']))
+    run_args(parse_args(['add', 'dothething']))
+    run_args(parse_args(['add', 'another']))
+
+    run_args(parse_args(['delete', 'reminder']))
+    run_args(parse_args(['list']))
+    out, err = capsys.readouterr()
+    assert "reminder.rem" not in out
+    assert "dothething.rem" in out
+    assert "another.rem" in out
+
+    run_args(parse_args(['delete', 'dothething.rem']))
+    run_args(parse_args(['list']))
+    out, err = capsys.readouterr()
+    assert "dothething.rem" not in out
+    assert "another.rem" in out
+
+    run_args(parse_args(['delete', '0']))
+    run_args(parse_args(['list']))
+    out, err = capsys.readouterr()
+    assert "No reminders found" in out
+
+def test_delete_by_force(capsys, move_reminders):
+    """Test that force flag does not prompt."""
+    clean_reminders()
+    run_args(parse_args(['add', 'reminder']))
+    run_args(parse_args(['delete', '-f', 'reminder']))
+    run_args(parse_args(['list']))
+    out, err = capsys.readouterr()
+    assert "No reminders found" in out
 
 def test_list_when_no_reminders(capsys, move_reminders):
     """Test that when no reminders exist, we handle that."""
@@ -68,16 +131,16 @@ def test_list_reminder_names(capsys, move_reminders):
     run_args(parse_args(['add', 'another']))
     run_args(parse_args(['list']))
     out, err = capsys.readouterr()
-    assert "2  reminder.rem\n" in out
-    assert "1  dothething.rem\n" in out
-    assert "0  another.rem\n" in out
+    assert "2  reminder.rem" in out
+    assert "1  dothething.rem" in out
+    assert "0  another.rem" in out
     assert len(out.split('\n')) == 6
 
 def test_print_help_when_no_arguments(capsys):
+    """Test that when no arguments given to parse_args, help is printed."""
     run_args(parse_args([]))
     out, err = capsys.readouterr()
     assert "usage: " in out
-
 
 @given(text())
 def test_fpath_alphanum(reminder_text):
@@ -139,7 +202,6 @@ def test_read_same_as_passed(move_reminders, reminder_text):
         assert reminder_file.read() == reminder_text
         assert get_reminder(parsed.fpath) == reminder_text
 
-
 @given(reminder_text=text(alphabet=string.printable, min_size=1).filter(lambda x: x.isprintable()),
        filename=text(alphabet=string.printable, min_size=1).filter(lambda x: is_valid_filename(x)))
 def test_show_reminder(capsys, move_reminders, reminder_text, filename):
@@ -170,8 +232,6 @@ def test_show_reminder(capsys, move_reminders, reminder_text, filename):
     out, err = capsys.readouterr()
     assert out == 'Z' + reminder_text + '\n'
 
-    #print(list_reminders())
-
     # Test by filename minus extension
     name1, ext1 = get_parts(add_parsed.fpath.name)
     run_args(parse_args(['show', name1]))
@@ -182,9 +242,33 @@ def test_show_reminder(capsys, move_reminders, reminder_text, filename):
     run_args(parse_args(['show', name2]))
     out, err = capsys.readouterr()
     assert out == 'Z' + reminder_text + '\n'
+
+
+@given(reminder_text=text(alphabet=string.printable, min_size=1).filter(lambda x: x.isprintable()))
+def test_list_not_long(capsys, move_reminders, reminder_text):
+    """Make sure that list never prints too long a line."""
+    assume(not reminder_text.startswith('-'))
+    note(reminder_text)
+    clean_reminders()
+    len_space = 2
+    len_index = 1
+    len_filename = 10
+    len_file_extension = 4
+    len_reminder = 20
+
+    len_line = len_index + len_space + len_filename + len_file_extension + len_space + len_reminder
+
+    run_args(parse_args(['add', reminder_text]))
+
+    run_args(parse_args(['ls']))
+    out, err = capsys.readouterr()
+    note(out)
+    for line in out.split('\n'):
+        assert len(line) <= len_line
  
 
 def test_show_index_out_of_bounds(move_reminders):
+    """Requesting by index when too large should raise an error."""
     clean_reminders()
     with raises(ValueError) as error:
         run_args(parse_args(['show', '0'], parser_class=ErrorRaisingArgumentParser))
@@ -196,20 +280,12 @@ def test_show_index_out_of_bounds(move_reminders):
         run_args(parse_args(['show', '1'], parser_class=ErrorRaisingArgumentParser))
     assert "List index out of range" in str(error2)
 
-
-def is_valid_filename(filename):
-    wrongfuncs = [lambda s: s == '',
-                  lambda s: not s.isprintable(),
-                  lambda s: s.isdigit(),
-                  lambda s: '/' in s,
-                  lambda s: '\\' in s,
-                  lambda s: '*' in s,
-                  lambda s: s.startswith('+'),
-                  lambda s: s.startswith('-'),
-                  lambda s: s.startswith('.'),
-                  lambda s: '\\' in s]
-
-    return not any([f(filename) for f in wrongfuncs])
+def test_not_reminder_exists(capsys, move_reminders):
+    """Requesting a nonexistant reminder should raise an error."""
+    clean_reminders()
+    with raises(ValueError) as error:
+        run_args(parse_args(['show', 'reminder'], parser_class=ErrorRaisingArgumentParser))
+    assert "is not a reminder" in str(error)
 
 
 @given(fname=text(alphabet=string.printable, min_size=1).filter(lambda x: is_valid_filename(x)))
